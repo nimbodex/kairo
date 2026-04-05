@@ -1,3 +1,4 @@
+mod agent;
 mod models;
 
 use serde_json::json;
@@ -225,9 +226,56 @@ async fn compare_models(
     Ok(())
 }
 
+async fn run_chat(api_key: String) -> Result<(), Box<dyn std::error::Error>> {
+    let mut agent = agent::Agent::new(api_key, "qwen/qwen3.6-plus:free")
+        .with_system_prompt("Ты — полезный ассистент. Отвечай кратко и по делу.");
+
+    println!("Kairo Agent (Qwen3.6 Plus)");
+    println!("Введите сообщение или 'выход' для завершения.\n");
+
+    let stdin = std::io::stdin();
+    loop {
+        print!("Вы> ");
+        use std::io::Write;
+        std::io::stdout().flush()?;
+
+        let mut input = String::new();
+        stdin.read_line(&mut input)?;
+        let input = input.trim();
+
+        if input.is_empty() {
+            continue;
+        }
+        if input == "выход" || input == "exit" || input == "quit" {
+            println!("До свидания!");
+            break;
+        }
+        if input == "/clear" {
+            agent.clear_history();
+            println!("(история очищена)\n");
+            continue;
+        }
+
+        match agent.send(input).await {
+            Ok(reply) => {
+                println!("\nАгент> {}\n", reply);
+                println!("(сообщений в истории: {})\n", agent.history_len());
+            }
+            Err(e) => eprintln!("\nОшибка: {}\n", e),
+        }
+    }
+
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let api_key = std::env::var("OPENROUTER_API_KEY")?;
+
+    if std::env::args().any(|a| a == "--chat") {
+        return run_chat(api_key).await;
+    }
+
     let client = reqwest::Client::new();
 
     // --- Способ 1: прямой ответ ---
