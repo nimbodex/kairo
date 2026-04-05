@@ -56,6 +56,76 @@ const TASK: &str = "\
 Затем он продаёт половину всех яиц, а из оставшихся готовит омлеты, \
 на каждый омлет нужно 3 яйца. Сколько омлетов он сможет приготовить?";
 
+async fn compare_temperatures(
+    client: &reqwest::Client,
+    api_key: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    println!("\n{}", "=".repeat(69));
+    println!("   СРАВНЕНИЕ ТЕМПЕРАТУР (temperature = 0 / 0.7 / 1.2)");
+    println!("{}\n", "=".repeat(69));
+
+    let prompt = "Придумай название для стартапа, который помогает людям \
+                  находить попутчиков для путешествий. Дай ровно 3 варианта \
+                  с кратким пояснением (1 предложение) для каждого.";
+
+    let temperatures = [0.0, 0.7, 1.2];
+    let labels = [
+        "temperature=0 (детерминированный)",
+        "temperature=0.7 (сбалансированный)",
+        "temperature=1.2 (креативный)",
+    ];
+
+    let mut results = Vec::new();
+
+    for (i, &temp) in temperatures.iter().enumerate() {
+        let body = json!({
+            "model": "qwen/qwen3.6-plus:free",
+            "messages": [
+                { "role": "user", "content": prompt }
+            ],
+            "temperature": temp,
+            "reasoning": { "enabled": true }
+        });
+
+        let result = send_request(client, api_key, body).await?;
+        println!("=== {} ===\n", labels[i]);
+        println!("Ответ:\n{}\n", result.choices[0].message.content);
+        println!(
+            "Токены: prompt={}, completion={}, total={}\n",
+            result.usage.prompt_tokens,
+            result.usage.completion_tokens,
+            result.usage.total_tokens,
+        );
+        results.push(result);
+    }
+
+    // --- Сравнительная таблица ---
+    println!("=== Сравнение температур: итоги ===\n");
+    println!(
+        "{:<40} {:>12} {:>12}",
+        "Настройка", "Completion", "Total"
+    );
+    println!("{}", "-".repeat(64));
+    for (i, result) in results.iter().enumerate() {
+        println!(
+            "{:<40} {:>12} {:>12}",
+            labels[i],
+            result.usage.completion_tokens,
+            result.usage.total_tokens,
+        );
+    }
+
+    println!("\n=== Выводы ===\n");
+    println!("temperature=0   — детерминированный: одинаковый результат при повторных запросах.");
+    println!("                  Лучше для: фактические вопросы, математика, классификация, код.\n");
+    println!("temperature=0.7 — сбалансированный: умеренная вариативность при сохранении качества.");
+    println!("                  Лучше для: копирайтинг, диалоги, генерация идей с контролем.\n");
+    println!("temperature=1.2 — креативный: максимальное разнообразие, возможны неожиданные ответы.");
+    println!("                  Лучше для: мозговой штурм, художественные тексты, нестандартные идеи.\n");
+
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let api_key = std::env::var("OPENROUTER_API_KEY")?;
@@ -158,6 +228,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("\nПравильный ответ: 7 омлетов");
     println!("(3 курицы * 2 яйца * 7 дней = 42; 42 / 2 = 21; 21 / 3 = 7)\n");
+
+    // --- Сравнение температур ---
+    compare_temperatures(&client, &api_key).await?;
 
     Ok(())
 }
