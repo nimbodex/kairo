@@ -227,11 +227,17 @@ async fn compare_models(
 }
 
 async fn run_chat(api_key: String) -> Result<(), Box<dyn std::error::Error>> {
+    let history_path = std::path::Path::new("chat_history.json");
+
     let mut agent = agent::Agent::new(api_key, "qwen/qwen3.6-plus:free")
-        .with_system_prompt("Ты — полезный ассистент. Отвечай кратко и по делу.");
+        .with_system_prompt("Ты — полезный ассистент. Отвечай кратко и по делу.")
+        .with_persistence(history_path);
 
     println!("Kairo Agent (Qwen3.6 Plus)");
-    println!("Введите сообщение или 'выход' для завершения.\n");
+    if agent.history_len() > 0 {
+        println!("(восстановлено {} сообщений из истории)", agent.history_len());
+    }
+    println!("Команды: 'выход' — выйти, '/clear' — очистить историю\n");
 
     let stdin = std::io::stdin();
     loop {

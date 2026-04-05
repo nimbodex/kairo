@@ -1,5 +1,6 @@
 use crate::models::{ApiErrorResponse, ChatCompletion};
 use serde_json::json;
+use std::path::{Path, PathBuf};
 
 pub struct Agent {
     client: reqwest::Client,
@@ -7,6 +8,7 @@ pub struct Agent {
     model: String,
     system_prompt: Option<String>,
     history: Vec<serde_json::Value>,
+    history_path: Option<PathBuf>,
 }
 
 impl Agent {
@@ -17,12 +19,31 @@ impl Agent {
             model: model.to_string(),
             system_prompt: None,
             history: Vec::new(),
+            history_path: None,
         }
     }
 
     pub fn with_system_prompt(mut self, prompt: &str) -> Self {
         self.system_prompt = Some(prompt.to_string());
         self
+    }
+
+    pub fn with_persistence(mut self, path: &Path) -> Self {
+        if let Ok(data) = std::fs::read_to_string(path) {
+            if let Ok(messages) = serde_json::from_str::<Vec<serde_json::Value>>(&data) {
+                self.history = messages;
+            }
+        }
+        self.history_path = Some(path.to_path_buf());
+        self
+    }
+
+    fn save_history(&self) {
+        if let Some(path) = &self.history_path {
+            if let Ok(json) = serde_json::to_string_pretty(&self.history) {
+                let _ = std::fs::write(path, json);
+            }
+        }
     }
 
     pub async fn send(&mut self, user_message: &str) -> Result<String, Box<dyn std::error::Error>> {
@@ -55,6 +76,8 @@ impl Agent {
         let text = resp.text().await?;
 
         if !status.is_success() {
+            // Откатываем добавленное user-сообщение при ошибке API
+            self.history.pop();
             let err: ApiErrorResponse = serde_json::from_str(&text)?;
             let raw = err.error.metadata
                 .and_then(|m| m.raw)
@@ -70,6 +93,8 @@ impl Agent {
             "content": &reply
         }));
 
+        self.save_history();
+
         Ok(reply)
     }
 
@@ -79,5 +104,6 @@ impl Agent {
 
     pub fn clear_history(&mut self) {
         self.history.clear();
+        self.save_history();
     }
 }
