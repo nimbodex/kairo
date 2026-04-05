@@ -1,6 +1,7 @@
 mod models;
 
 use serde_json::json;
+use std::time::Instant;
 
 async fn send_request(
     client: &reqwest::Client,
@@ -126,6 +127,104 @@ async fn compare_temperatures(
     Ok(())
 }
 
+struct ModelResult {
+    label: &'static str,
+    model_id: &'static str,
+    answer: String,
+    elapsed_ms: u128,
+    prompt_tokens: u32,
+    completion_tokens: u32,
+    total_tokens: u32,
+    cost: f64,
+}
+
+async fn compare_models(
+    client: &reqwest::Client,
+    api_key: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    println!("\n{}", "=".repeat(69));
+    println!("   СРАВНЕНИЕ МОДЕЛЕЙ (слабая / средняя / сильная)");
+    println!("{}\n", "=".repeat(69));
+
+    let prompt = "Объясни, почему небо голубое. Дай краткий, но научно точный ответ (3-5 предложений).";
+
+    let models: &[(&str, &str)] = &[
+        ("Слабая:  Qwen3 0.6B",    "qwen/qwen3-0.6b:free"),
+        ("Средняя: Qwen3 4B",      "qwen/qwen3-4b:free"),
+        ("Сильная: Qwen3 235B A22B","qwen/qwen3-235b-a22b:free"),
+    ];
+
+    let mut results = Vec::new();
+
+    for &(label, model_id) in models {
+        println!("--- {} ({}) ---\n", label, model_id);
+
+        let body = json!({
+            "model": model_id,
+            "messages": [
+                { "role": "user", "content": prompt }
+            ],
+            "reasoning": { "enabled": true }
+        });
+
+        let start = Instant::now();
+        let completion = send_request(client, api_key, body).await?;
+        let elapsed = start.elapsed().as_millis();
+
+        let answer = &completion.choices[0].message.content;
+        println!("Ответ:\n{}\n", answer);
+        println!("Время: {} мс", elapsed);
+        println!("Токены: prompt={}, completion={}, total={}",
+            completion.usage.prompt_tokens,
+            completion.usage.completion_tokens,
+            completion.usage.total_tokens,
+        );
+        println!("Стоимость: ${:.6}\n", completion.usage.cost);
+
+        results.push(ModelResult {
+            label,
+            model_id,
+            answer: answer.clone(),
+            elapsed_ms: elapsed,
+            prompt_tokens: completion.usage.prompt_tokens,
+            completion_tokens: completion.usage.completion_tokens,
+            total_tokens: completion.usage.total_tokens,
+            cost: completion.usage.cost,
+        });
+    }
+
+    // --- Сравнительная таблица ---
+    println!("=== Сравнительная таблица моделей ===\n");
+    println!(
+        "{:<28} {:>10} {:>10} {:>10} {:>12}",
+        "Модель", "Время(мс)", "Compl.tok", "Total tok", "Стоимость"
+    );
+    println!("{}", "-".repeat(70));
+    for r in &results {
+        println!(
+            "{:<28} {:>10} {:>10} {:>10} {:>12.6}",
+            r.label, r.elapsed_ms, r.completion_tokens, r.total_tokens, r.cost
+        );
+    }
+
+    println!("\n=== Выводы ===\n");
+    println!("Слабая модель (0.6B)  — быстрая и дешёвая, но ответы поверхностные,");
+    println!("                        могут содержать неточности. Подходит для простых задач.\n");
+    println!("Средняя модель (4B)   — баланс скорости и качества. Справляется с большинством");
+    println!("                        повседневных задач: суммаризация, перевод, Q&A.\n");
+    println!("Сильная модель (235B) — наиболее точные и полные ответы, но медленнее и дороже.");
+    println!("                        Для сложных задач: анализ, рассуждения, генерация кода.\n");
+
+    println!("Ссылки на модели:");
+    for r in &results {
+        let slug = r.model_id.trim_end_matches(":free");
+        println!("  {} -> https://openrouter.ai/{}", r.label, slug);
+    }
+    println!();
+
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let api_key = std::env::var("OPENROUTER_API_KEY")?;
@@ -231,6 +330,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // --- Сравнение температур ---
     compare_temperatures(&client, &api_key).await?;
+
+    // --- Сравнение моделей ---
+    compare_models(&client, &api_key).await?;
 
     Ok(())
 }
