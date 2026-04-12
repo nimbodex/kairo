@@ -1,5 +1,13 @@
 mod agent;
+mod context_strategies;
+mod history_compression;
+mod invariants;
+mod memory_model;
 mod models;
+mod personalization;
+mod state_transitions;
+mod task_state_machine;
+mod token_tracking;
 
 use serde_json::json;
 use std::time::Instant;
